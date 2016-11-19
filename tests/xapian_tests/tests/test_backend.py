@@ -17,9 +17,8 @@ from haystack.models import SearchResult
 from haystack.utils.loading import UnifiedIndex
 
 from ..search_indexes import XapianNGramIndex, XapianEdgeNGramIndex, \
-    CompleteBlogEntryIndex, BlogSearchIndex
-from ..models import BlogEntry, AnotherMockModel, MockTag
-
+    CompleteBlogEntryIndex, BlogSearchIndex, UUIDBlogSearchIndex
+from ..models import BlogEntry, AnotherMockModel, MockTag, UUIDBlogEntry
 
 XAPIAN_VERSION = [int(x) for x in xapian.__version__.split('.')]
 
@@ -330,6 +329,38 @@ class BackendFeaturesTestCase(HaystackBackendTestCase, TestCase):
         """
         self.backend.update(self.index, self.sample_objs)
         self.assertEqual(self.backend.document_count(), 3)
+
+    def test_update_string_pk(self):
+        """
+        Covers #138, Must not assume django_id is an int
+        """
+        self.sample_objs = []
+
+        for i in range(1, 4):
+            entry = UUIDBlogEntry()
+            entry.uuid = 'uuid-%s' % i
+            entry.author = 'david%s' % i
+            entry.url = 'http://example.com/%d/' % i
+            entry.boolean = bool(i % 2)
+            entry.number = i*5
+            entry.float_number = i*5.0
+            entry.decimal_number = Decimal('22.34')
+            entry.datetime = (
+                datetime.datetime(2009, 2, 25, 1, 1, 1) - datetime.timedelta(seconds=i)
+            )
+            entry.date = datetime.date(2009, 2, 23) + datetime.timedelta(days=i)
+            self.sample_objs.append(entry)
+
+        self.sample_objs[0].float_number = 834.0
+        self.sample_objs[1].float_number = 35.5
+        self.sample_objs[2].float_number = 972.0
+        for obj in self.sample_objs:
+            obj.save()
+
+        self.backend.update(UUIDBlogSearchIndex(), UUIDBlogEntry.objects.all())
+
+        self.assertEqual(pks(self.backend.search(xapian.Query(''))['results']),
+                         [1, 2, 3])
 
     def test_remove(self):
         self.backend.remove(self.sample_objs[0])
